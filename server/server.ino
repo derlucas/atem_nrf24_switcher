@@ -33,6 +33,8 @@
 #define LED_TALLY4  A3
 #define LED_TALLY5  A4
 
+const byte tally_pins[] = { A0, A1, A2, A3, A4 };
+
 #define PWM_RING1   44
 #define PWM_RING2   45
 #define PWM_RING3   46
@@ -64,12 +66,11 @@ byte ledBlinkState = LOW;
 uint32_t ledBlinkMillis;
 uint16_t buttons = 0;
 uint8_t lastKeyerInput = -1;
-uint8_t lastPgmInput = -1;
+bool enabledTestMode = false;
 
 OneButton redButton(43, true);
-OneButton btnA1(25, true); OneButton btnA2(26, true);
-OneButton btnA3(27, true); OneButton btnB1(28, true);
-OneButton btnB2(29, true); OneButton btnB3(30, true);
+OneButton btnA1(25, true); OneButton btnA2(26, true); OneButton btnA3(27, true);
+OneButton btnB1(28, true); OneButton btnB2(29, true); OneButton btnB3(30, true);
 OneButton btnScene1(31, true); OneButton btnScene2(32, true);
 OneButton btnScene3(33, true); OneButton btnScene4(34, true);
 OneButton btnScene5(47, true);
@@ -79,7 +80,7 @@ OneButton btnScene5(47, true);
   IPAddress clientIp(192, 168, 10, 45);
   IPAddress atemIp(192, 168, 10, 240);
   EthernetServer server(80);
-  ATEMext AtemSwitcher;
+  ATEMext atem;
   bool isAtemOnline = false;
 #endif
 
@@ -99,6 +100,7 @@ OneButton btnScene5(47, true);
 Adafruit_NeoPixel pixels1 = Adafruit_NeoPixel(PIXELS, WSLED_BOX1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixels2 = Adafruit_NeoPixel(PIXELS, WSLED_BOX2, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixels3 = Adafruit_NeoPixel(PIXELS, WSLED_BOX3, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels[] = { pixels1, pixels2, pixels3 };
 
 
 void setup() {
@@ -108,44 +110,53 @@ void setup() {
 
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_TALLY1, OUTPUT); pinMode(LED_TALLY2, OUTPUT); pinMode(LED_TALLY3, OUTPUT);
-  pinMode(LED_TALLY4, OUTPUT); pinMode(LED_TALLY5, OUTPUT);
+  for(uint8_t i = 0; i < sizeof(tally_pins); i++) {
+    pinMode(tally_pins[i], OUTPUT);
+  }
 
   pinMode(PWM_RING1, OUTPUT); pinMode(PWM_RING2, OUTPUT); pinMode(PWM_RING3, OUTPUT);
 
-  btnA1.attachClick(btnA1Click); btnA2.attachClick(btnA2Click); btnA2.attachClick(btnA3Click);
-  btnB1.attachClick(btnB1Click); btnB2.attachClick(btnB2Click); btnB2.attachClick(btnB3Click);
+  btnA1.attachClick(btnA1Click); btnA2.attachClick(btnA2Click); btnA3.attachClick(btnA3Click);
+  btnB1.attachClick(btnB1Click); btnB2.attachClick(btnB2Click); btnB3.attachClick(btnB3Click);
+
+  btnA1.setClickTicks(100); btnA2.setClickTicks(100); btnA3.setClickTicks(100);
+  btnB1.setClickTicks(100); btnB2.setClickTicks(100); btnB3.setClickTicks(100);
 
   btnScene1.attachClick(btnScene1Click); btnScene2.attachClick(btnScene2Click);
   btnScene3.attachClick(btnScene3Click); 
   //btnScene4.attachClick(btnScene4Click); btnScene5.attachClick(btnScene5Click);
 
+  btnScene1.setClickTicks(100); btnScene2.setClickTicks(100); btnScene3.setClickTicks(100);
+  btnScene4.setClickTicks(100); btnScene5.setClickTicks(100);
+
+  redButton.attachClick(redBtnClick); redButton.setClickTicks(100);
+  redButton.attachLongPressStart(redBtnLong); redButton.setPressTicks(2000);
+
   pinMode(DIPSW_1, INPUT_PULLUP); pinMode(DIPSW_2, INPUT_PULLUP); pinMode(DIPSW_3, INPUT_PULLUP);
   pinMode(DIPSW_4, INPUT_PULLUP); pinMode(DIPSW_5, INPUT_PULLUP); pinMode(DIPSW_6, INPUT_PULLUP);
   pinMode(DIPSW_7, INPUT_PULLUP); pinMode(DIPSW_8, INPUT_PULLUP);
 
-  pixels1.begin(); pixels1.show(); pixels2.begin(); pixels2.show(); pixels3.begin(); pixels3.show(); 
+  pixels1.begin(); pixels1.show(); pixels2.begin(); pixels2.show(); pixels3.begin(); pixels3.show();
 
   Serial.begin(115200);
   printf_begin();
   Serial.println("testing leds...");
   ledTest();
 
-  redButton.attachClick(redBtnClick); redButton.attachLongPressStart(redBtnLong); redButton.setPressTicks(2000);
-
   digitalWrite(LED_RED, HIGH);
 
 #ifdef USE_ATEM
   Serial.println("atem begin...");
   pinMode(ETH_RESET, OUTPUT);
-  digitalWrite(ETH_RESET, LOW);
+  digitalWrite(ETH_RESET, LOW);   // this pin is connected to ethernet shield reset pin
+                                  // i cut the connection to the arduino reset to allow me resetting the shield
   delay(100);
   digitalWrite(ETH_RESET, HIGH);
   pinMode(ETH_RESET, INPUT);
   delay(100);
   Ethernet.begin(mac, clientIp);
-  AtemSwitcher.begin(atemIp);
-  AtemSwitcher.connect();
+  atem.begin(atemIp);
+  atem.connect();
 #endif
 
 
@@ -171,50 +182,11 @@ void setup() {
   wdt_enable(WDTO_4S);
 }
 
-void redBtnClick() {
-
-#ifdef USE_ATEM
-  if (isAtemOnline) {
-    Serial.println("setting ATEM test mode");
-    AtemSwitcher.setProgramInputVideoSource(1, 1000);
-    AtemSwitcher.setProgramInputVideoSource(0, 1000);
-  }
-#endif
-
-}
-
-void redBtnLong() {
-
-  Serial.println("red button long pressed, resetting");
-  digitalWrite(LED_RED, HIGH);
-  digitalWrite(LED_GREEN, HIGH);
-
-  uint8_t counter;  // endless loop, let WDG trigger reset
-  while (true) {
-    counter++;
-  }
-}
-
-uint8_t readDMXAddress() {
-
-  uint8_t addr = 0;
-  addr += digitalRead(DIPSW_1) == LOW ? 0x01 : 0;
-  addr += digitalRead(DIPSW_2) == LOW ? 0x02 : 0;
-  addr += digitalRead(DIPSW_3) == LOW ? 0x04 : 0;
-  addr += digitalRead(DIPSW_4) == LOW ? 0x08 : 0;
-  addr += digitalRead(DIPSW_5) == LOW ? 0x10 : 0;
-  addr += digitalRead(DIPSW_6) == LOW ? 0x20 : 0;
-  addr += digitalRead(DIPSW_7) == LOW ? 0x40 : 0;
-  addr += digitalRead(DIPSW_8) == LOW ? 0x80 : 0;
-
-  return addr;
-}
 
 void ledTest() {
   digitalWrite(LED_RED, HIGH);
   digitalWrite(LED_GREEN, HIGH);
-  delay(200);
-
+  delay(100);
 
   digitalWrite(LED_TALLY1, HIGH); delay(100);
   digitalWrite(LED_TALLY2, HIGH); delay(100);
@@ -232,89 +204,64 @@ void ledTest() {
   delay(100);
 
   for(uint8_t i = 0; i < 255; i++) {
-    analogWrite(PWM_RING1, i);
-    delay(2);
+    analogWrite(PWM_RING1, i); delay(1);
   }
-  delay(200);
+  delay(100);
   for(uint8_t i = 0; i < 255; i++) {
-    analogWrite(PWM_RING2, i);
-    delay(2);
+    analogWrite(PWM_RING2, i); delay(1);
   }
-  delay(200);
+  delay(100);
   for(uint8_t i = 0; i < 255; i++) {
-    analogWrite(PWM_RING3, i);
-    delay(2);
+    analogWrite(PWM_RING3, i); delay(1);
   }
 
-  delay(200);
   analogWrite(PWM_RING1, 0);
   analogWrite(PWM_RING2, 0);
   analogWrite(PWM_RING3, 0);
   
-  digitalWrite(LED_TALLY1, LOW); delay(100);
-  digitalWrite(LED_TALLY2, LOW); delay(100);
-  digitalWrite(LED_TALLY3, LOW); delay(100);
-  digitalWrite(LED_TALLY4, LOW); delay(100);
-  digitalWrite(LED_TALLY5, LOW); delay(100);
+  digitalWrite(LED_TALLY1, LOW); delay(50);
+  digitalWrite(LED_TALLY2, LOW); delay(50);
+  digitalWrite(LED_TALLY3, LOW); delay(50);
+  digitalWrite(LED_TALLY4, LOW); delay(50);
+  digitalWrite(LED_TALLY5, LOW); delay(50);
   digitalWrite(LED_RED, LOW);
   digitalWrite(LED_GREEN, LOW);
 }
 
-void tallyLEDs() {
+void outputLEDs() {
   static uint32_t tallyMillis = 0;
-  static uint8_t lastTally = -1;
-  uint16_t currentTally = 0;
 
-  if (millis() - tallyMillis > 100) {
+  if (millis() - tallyMillis > 200) {
     tallyMillis = millis();
   } else {
     return;
   }
 
-  for (int i = 0; i < ATEM_CHANNEL; i++) {
-    //printf("t %d = %d\n", i, (tally[i] & 0x03));
-    currentTally += (tally[i] & 0x03) << i;
+  for(uint8_t i = 0; i<3; i++) {
+    if (tally[i] & 0x01 != 0) {
+      digitalWrite(tally_pins[i], HIGH);
+  
+      if(lastKeyerInput == i+1) {
+        setAllPixels(&pixels[i], 100, 100, 0);
+      } else {
+        setAllPixels(&pixels[i], 100, 0, 0);
+      }
+    } else if(lastKeyerInput == 1) {
+      setAllPixels(&pixels[i], 20, 100, 0);
+    } else {
+      setAllPixels(&pixels[i], 20, 0, 0);
+      digitalWrite(tally_pins[i], LOW);
+    }
   }
 
-  if (currentTally == lastTally) {
-    return;
-  }
-
-  //printf("cur: %d last: %d\n", currentTally, lastTally );
-  
-  lastTally = currentTally;
-  
-  nrfLeds[0] = 0x00;
-  nrfLeds[1] = 0x00;
-  digitalWrite(LED_TALLY1, LOW);
-  digitalWrite(LED_TALLY2, LOW);
-  digitalWrite(LED_TALLY3, LOW);
-  digitalWrite(LED_TALLY4, LOW);
-  digitalWrite(LED_TALLY5, LOW);
-  
-  setAllPixels(&pixels1, 20, 0, 0);
-  setAllPixels(&pixels2, 20, 0, 0);
-  setAllPixels(&pixels3, 20, 0, 0);
-
-  if (tally[0] & 0x01 != 0) {
-    digitalWrite(LED_TALLY1, HIGH);
-    setAllPixels(&pixels1, 100, lastKeyerInput == 1 ? 50 : 20, 20);
-  }
-  if ( tally[1] & 0x01 != 0) {
-    digitalWrite(LED_TALLY2, HIGH);
-    setAllPixels(&pixels2, 100, lastKeyerInput == 2 ? 50 : 20, 20);
-  }
-  if ( tally[2] & 0x01 != 0) {
-    digitalWrite(LED_TALLY3, HIGH);
-    setAllPixels(&pixels3, 100, lastKeyerInput == 3 ? 50 : 20, 20);
-  }
-  if ( tally[3] & 0x01 != 0) {
-    digitalWrite(LED_TALLY4, HIGH);
-    nrfLeds[0] = 0x01;
-  }
-  if ( tally[4] & 0x01 != 0) {
-    digitalWrite(LED_TALLY5, HIGH);
-    nrfLeds[1] = 0x01;
+  for(uint8_t i = 0; i<2; i++) {
+    if ( tally[i+3] & 0x01 != 0) {
+      digitalWrite(tally_pins[i+3], HIGH);
+      nrfLeds[i] = 0x01;
+    } else {
+      digitalWrite(tally_pins[i+3], LOW);
+      nrfLeds[i] = 0x00;
+    }
   }
 }
 
@@ -323,6 +270,49 @@ void setAllPixels(Adafruit_NeoPixel *strip, byte red, byte green, byte blue) {
     strip->setPixelColor(i, red, green, blue);
   }
   strip->show();
+}
+
+uint8_t readDMXAddress() {
+
+  uint8_t addr = 0;
+  addr += digitalRead(DIPSW_1) == LOW ? 0x01 : 0;
+  addr += digitalRead(DIPSW_2) == LOW ? 0x02 : 0;
+  addr += digitalRead(DIPSW_3) == LOW ? 0x04 : 0;
+  addr += digitalRead(DIPSW_4) == LOW ? 0x08 : 0;
+  addr += digitalRead(DIPSW_5) == LOW ? 0x10 : 0;
+  addr += digitalRead(DIPSW_6) == LOW ? 0x20 : 0;
+  addr += digitalRead(DIPSW_7) == LOW ? 0x40 : 0;
+  addr += digitalRead(DIPSW_8) == LOW ? 0x80 : 0;
+
+  return addr;
+}
+
+void redBtnLong() {
+  Serial.println("red button long pressed, resetting");
+  digitalWrite(LED_RED, HIGH);
+  digitalWrite(LED_GREEN, HIGH);
+  uint8_t counter;  // endless loop, let WDG trigger reset
+  while (true) { counter++; }
+}
+
+void redBtnClick() {
+#ifdef USE_ATEM
+  if (isAtemOnline) {
+    if(!enabledTestMode) {
+      Serial.println("setting ATEM test mode");
+      setInput(1000);
+      atem.setProgramInputVideoSource(0, 1000);
+      enabledTestMode = true;
+    } else {
+      Serial.println("disabling ATEM test mode");
+      enabledTestMode = false;
+      setupKeyer();
+      setupSuperSource();
+      setInput(1);
+      atem.setProgramInputVideoSource(0, 6000);  // SuperSource
+    }
+  }
+#endif
 }
 
 void btnA1Click() { setInput(1); }
@@ -338,22 +328,8 @@ void btnScene3Click() { setSuperSource(2); }
 void buttonsRemote() {
   static uint16_t lastButton = 0;
   buttons = 0;
-
-  /*buttons |= digitalRead(BOX_BTN_A1) == HIGH ? 0 : 0x0001;
-  buttons |= digitalRead(BOX_BTN_A2) == HIGH ? 0 : 0x0002;
-  buttons |= digitalRead(BOX_BTN_A3) == HIGH ? 0 : 0x0004; */
   buttons |= (nrfButtons[0] & 0x03) << 3;
   buttons |= (nrfButtons[1] & 0x03) << 5;
-
-  /*buttons |= digitalRead(BOX_BTN_B1) == HIGH ? 0 : 0x0080;
-  buttons |= digitalRead(BOX_BTN_B2) == HIGH ? 0 : 0x0100;
-  buttons |= digitalRead(BOX_BTN_B3) == HIGH ? 0 : 0x0200;*/
-
-  /*buttons |= digitalRead(SCENE_BTN_1) == HIGH ? 0 : 0x0400;
-  buttons |= digitalRead(SCENE_BTN_2) == HIGH ? 0 : 0x0800;
-  buttons |= digitalRead(SCENE_BTN_3) == HIGH ? 0 : 0x1000;
-  buttons |= digitalRead(SCENE_BTN_4) == HIGH ? 0 : 0x2000;
-  buttons |= digitalRead(SCENE_BTN_5) == HIGH ? 0 : 0x4000;*/
 
   if (buttons != lastButton) {
     printf("button: %d\n", buttons);
@@ -362,12 +338,11 @@ void buttonsRemote() {
     if (buttons & 0x0008) {
       setInput(4);
     } else if (buttons & 0x0020) {
-      setInput(5);
+      setInput(6);
     } 
 #endif
 
     lastButton = buttons;
-
   }
 }
 
@@ -386,7 +361,7 @@ void loop() {
   wdt_reset();
 #endif
 
-  tallyLEDs();
+  outputLEDs();
 
 #ifdef USE_NRF
   loopNRF();
@@ -450,99 +425,98 @@ void loopNRF() {
 
 #ifdef USE_ATEM
 
-void setInput(uint8_t program) {
-
-  if(program != lastPgmInput) {
-    AtemSwitcher.setProgramInputVideoSource(1, program);  
-    
-    lastPgmInput = program;
-    
-  } else {
-    // same button again, so switch to last input
-    AtemSwitcher.setProgramInputVideoSource(1, lastPgmInput);
-  }
-  
+void setInput(uint16_t program) {
+  printf("input: %d\n", program);
+  atem.setProgramInputVideoSource(1, program);
+  setSuperSource(0);
 }
 
 void setKeyer(uint8_t program) {
-  printf("keyer %d\n", program);
   
   if(program != lastKeyerInput) {
     // change keyer source
-    AtemSwitcher.setKeyerFillSource(0, 0, program);
-    AtemSwitcher.setKeyerOnAirEnabled(0, 0, true);
-    
+    printf("keyer %d\n", program);
+    atem.setKeyerFillSource(0, 0, program);
+    atem.setKeyerOnAirEnabled(0, 0, true);
     lastKeyerInput = program;
   } else {
     // source is the same, so disable
-    AtemSwitcher.setKeyerOnAirEnabled(0, 0, false);
+    printf("keyer off\n");
+    atem.setKeyerOnAirEnabled(0, 0, false);
     lastKeyerInput = -1;
   }
-  
   
 }
 
 void setupKeyer() {
-  AtemSwitcher.setKeyerType(0, 0, 1);
-  AtemSwitcher.setKeyChromaHue(0, 0, 1123);
-  AtemSwitcher.setKeyChromaGain(0, 0, 741);
-  AtemSwitcher.setKeyChromaYSuppress(0, 0, 1000);
-  AtemSwitcher.setKeyChromaLift(0, 0, 0);
-  AtemSwitcher.setKeyChromaNarrow(0, 0, false);
+  atem.setKeyerType(0, 0, 1);
+  atem.setKeyChromaHue(0, 0, 1123);
+  atem.setKeyChromaGain(0, 0, 741);
+  atem.setKeyChromaYSuppress(0, 0, 1000);
+  atem.setKeyChromaLift(0, 0, 0);
+  atem.setKeyChromaNarrow(0, 0, false);
 }
 
 void setupSuperSource() {
-  AtemSwitcher.setSuperSourceFillSource(0);
-  AtemSwitcher.setSuperSourcePreMultiplied(false);
-  AtemSwitcher.setSuperSourceBorderEnabled(false);
-  AtemSwitcher.setSuperSourceBoxParametersEnabled(0, true);
-  AtemSwitcher.setSuperSourceBoxParametersEnabled(1, false);
-  AtemSwitcher.setSuperSourceBoxParametersEnabled(2, false);
-  AtemSwitcher.setSuperSourceBoxParametersEnabled(3, false);
-  AtemSwitcher.setSuperSourceBoxParametersInputSource(0, 10020);   //ME 2 Prog 
-  AtemSwitcher.setSuperSourceBoxParametersInputSource(1, 1);
-  AtemSwitcher.setSuperSourceBoxParametersInputSource(2, 2);
-  AtemSwitcher.setSuperSourceBoxParametersInputSource(3, 3);
+  atem.setSuperSourceFillSource(0);
+  atem.setSuperSourcePreMultiplied(false);
+  atem.setSuperSourceBorderEnabled(false);
+  atem.setSuperSourceBoxParametersEnabled(0, true);
+  atem.setSuperSourceBoxParametersEnabled(1, false);
+  atem.setSuperSourceBoxParametersEnabled(2, false);
+  atem.setSuperSourceBoxParametersEnabled(3, false);
+  atem.setSuperSourceBoxParametersInputSource(0, 10020);   //ME 2 Prog
+  atem.setSuperSourceBoxParametersInputSource(1, 1);
+  atem.setSuperSourceBoxParametersInputSource(2, 2);
+  atem.setSuperSourceBoxParametersInputSource(3, 3);
   
-  AtemSwitcher.setSuperSourceBoxParametersPositionX(0, 0);
-  AtemSwitcher.setSuperSourceBoxParametersPositionY(0, 0);
-  AtemSwitcher.setSuperSourceBoxParametersSize(0, 1000);
+  atem.setSuperSourceBoxParametersPositionX(0, 0);
+  atem.setSuperSourceBoxParametersPositionY(0, 0);
+  atem.setSuperSourceBoxParametersSize(0, 1000);
   
-  AtemSwitcher.setSuperSourceBoxParametersPositionX(1, 1100);
-  AtemSwitcher.setSuperSourceBoxParametersPositionY(1, 00);
-  AtemSwitcher.setSuperSourceBoxParametersSize(1, 300);
+  atem.setSuperSourceBoxParametersPositionX(1, 1100);
+  atem.setSuperSourceBoxParametersPositionY(1, 00);
+  atem.setSuperSourceBoxParametersSize(1, 300);
   
-  AtemSwitcher.setSuperSourceBoxParametersPositionX(2, 0);
-  AtemSwitcher.setSuperSourceBoxParametersPositionY(2, 0);
-  AtemSwitcher.setSuperSourceBoxParametersSize(2, 300);
+  atem.setSuperSourceBoxParametersPositionX(2, 0);
+  atem.setSuperSourceBoxParametersPositionY(2, 0);
+  atem.setSuperSourceBoxParametersSize(2, 300);
   
-  AtemSwitcher.setSuperSourceBoxParametersPositionX(3, -1100);
-  AtemSwitcher.setSuperSourceBoxParametersPositionY(4, 0);
-  AtemSwitcher.setSuperSourceBoxParametersSize(3, 300);
+  atem.setSuperSourceBoxParametersPositionX(3, -1100);
+  atem.setSuperSourceBoxParametersPositionY(4, 0);
+  atem.setSuperSourceBoxParametersSize(3, 300);
   
-  AtemSwitcher.setSuperSourceBoxParametersCropped(0, false);
+  atem.setSuperSourceBoxParametersCropped(0, false);
 }
 
 void setSuperSource(uint8_t mode) {
 
+  printf("set ssrc: %d\n", mode);
+
   switch(mode) {
     case 0:
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(0, true);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(1, false);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(2, false);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(3, false);
+      atem.setSuperSourceBoxParametersEnabled(0, true);
+      atem.setSuperSourceBoxParametersEnabled(1, false);
+      atem.setSuperSourceBoxParametersEnabled(2, false);
+      atem.setSuperSourceBoxParametersEnabled(3, false);
       break;
     case 1:
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(0, false);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(1, true);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(4, true);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(5, true);
+      atem.setSuperSourceBoxParametersEnabled(0, false);
+      atem.setSuperSourceBoxParametersInputSource(1, 4);
+      atem.setSuperSourceBoxParametersInputSource(2, 1);
+      atem.setSuperSourceBoxParametersInputSource(3, 6);
+      atem.setSuperSourceBoxParametersEnabled(1, true);
+      atem.setSuperSourceBoxParametersEnabled(2, true);
+      atem.setSuperSourceBoxParametersEnabled(3, true);
       break;
     case 2:
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(0, false);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(1, true);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(2, true);
-      AtemSwitcher.setSuperSourceBoxParametersEnabled(3, true);
+      atem.setSuperSourceBoxParametersEnabled(0, false);
+      atem.setSuperSourceBoxParametersInputSource(1, 1);
+      atem.setSuperSourceBoxParametersInputSource(2, 4);
+      atem.setSuperSourceBoxParametersInputSource(3, 6);
+      atem.setSuperSourceBoxParametersEnabled(1, true);
+      atem.setSuperSourceBoxParametersEnabled(2, true);
+      atem.setSuperSourceBoxParametersEnabled(3, true);
       break;
   }
   
@@ -557,9 +531,9 @@ void loopAtem() {
     return;
   }
 
-  AtemSwitcher.runLoop();
+  atem.runLoop();
 
-  if (AtemSwitcher.hasInitialized())  {
+  if (atem.hasInitialized())  {
     if (!isAtemOnline)  {
       isAtemOnline = true;
       digitalWrite(LED_RED, LOW);
@@ -567,15 +541,18 @@ void loopAtem() {
       setupSuperSource();
 
       // ME 1 is for selecting super source only 
-      AtemSwitcher.setProgramInputVideoSource(0, 6000);  // preset SuperSource
+      atem.setProgramInputVideoSource(0, 6000);  // preset SuperSource
       
       // ME 2 is for selecting the input. goes int SuperSource Box 1
       setInput(1); // preset input 1
     }
 
-    for (uint8_t i = 0; i < ATEM_CHANNEL; i++) {
-      tally[i] = AtemSwitcher.getTallyByIndexTallyFlags(i) & 0x03;
-    }
+    tally[0] = atem.getTallyByIndexTallyFlags(0) & 0x03;
+    tally[1] = atem.getTallyByIndexTallyFlags(1) & 0x03;
+    tally[2] = atem.getTallyByIndexTallyFlags(2) & 0x03;
+    tally[3] = atem.getTallyByIndexTallyFlags(3) & 0x03;
+    tally[4] = atem.getTallyByIndexTallyFlags(5) & 0x03;
+
   } else {
     // at this point the ATEM is not connected and initialized anymore
 
