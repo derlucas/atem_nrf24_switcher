@@ -79,7 +79,6 @@ OneButton btnScene5(47, true);
   byte mac[] = { 0x90, 0xA2, 0xDB, 0x2A, 0x6A, 0xC4 };
   IPAddress clientIp(192, 168, 10, 45);
   IPAddress atemIp(192, 168, 10, 240);
-  EthernetServer server(80);
   ATEMext atem;
   bool isAtemOnline = false;
 #endif
@@ -570,7 +569,6 @@ void loopAtem() {
 
 #ifdef USE_DMX
 ISR(USART1_RX_vect) {
-  //void serialEvent1() {
   static  uint16_t dmxCount;
   uint8_t  USARTstate = UCSR1A;    //get state before data!
   uint8_t  dmxByte    = UDR1;      //get data
@@ -606,55 +604,3 @@ ISR(USART1_RX_vect) {
 }
 #endif
 
-/*
-  void loopHttp() {
-
-  EthernetClient client = server.available();
-  if (client) {
-    // an http request ends with a blank line
-    boolean currentLineIsBlank = true;
-
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        // if you've gotten to the end of the line (received a newline
-        // character) and the line is blank, the http request has ended,
-        // so you can send a reply
-        if (c == '\n' && currentLineIsBlank) {
-          // send a standard http response header
-          client.println("HTTP/1.1 200 OK\r\nContent-Type: text/html");
-          client.println("Connection: close\r\n");
-          client.println("<!DOCTYPE HTML><html>");
-          // output the value of each nrf-client voltage
-          for (byte i=0; i < MAX_NODES; i++) {
-            client.print("node ");
-            client.print(i);
-            client.print(": buttons: ");
-            client.print(buttons);
-            client.print(" millis: ");
-            client.print(rxMillis[i]);
-            client.println("<br />");
-          }
-
-          client.print("<br/>Atem connection: ");
-          client.println(isAtemOnline ? "Online":"Offline");
-          client.println("</html>");
-          break;
-        }
-        if (c == '\n') {
-          // you're starting a new line
-          currentLineIsBlank = true;
-        }
-        else if (c != '\r') {
-          // you've gotten a character on the current line
-          currentLineIsBlank = false;
-        }
-      }
-    }
-    // give the web browser time to receive the data
-    delay(1);
-    // close the connection:
-    client.stop();
-  }
-  }
-*/
