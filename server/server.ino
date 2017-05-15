@@ -41,21 +41,6 @@
 #define WSLED_BOX2  23
 #define WSLED_BOX3  24
 
-#define BOX_BTN_A1  25
-#define BOX_BTN_A2  26
-#define BOX_BTN_A3  27
-#define BOX_BTN_B1  28
-#define BOX_BTN_B2  29
-#define BOX_BTN_B3  30
-
-#define SCENE_BTN_1 31
-#define SCENE_BTN_2 32
-#define SCENE_BTN_3 33
-#define SCENE_BTN_4 34
-#define SCENE_BTN_5 47
-
-#define BTN_RED     43
-
 #define DIPSW_1     35
 #define DIPSW_2     36
 #define DIPSW_3     37
@@ -81,34 +66,34 @@ uint16_t buttons = 0;
 uint8_t lastKeyerInput = -1;
 uint8_t lastPgmInput = -1;
 
-OneButton redButton(BTN_RED, true);
-/*OneButton pgmBtn1(BOX_BTN_A1, true);
-OneButton pgmBtn2(BOX_BTN_A2, true);
-OneButton pgmBtn3(BOX_BTN_A3, true);
-OneButton keyBtn1(BOX_BTN_B1, true);
-OneButton keyBtn2(BOX_BTN_B2, true);
-OneButton keyBtn3(BOX_BTN_B3, true); */
+OneButton redButton(43, true);
+OneButton btnA1(25, true); OneButton btnA2(26, true);
+OneButton btnA3(27, true); OneButton btnB1(28, true);
+OneButton btnB2(29, true); OneButton btnB3(30, true);
+OneButton btnScene1(31, true); OneButton btnScene2(32, true);
+OneButton btnScene3(33, true); OneButton btnScene4(34, true);
+OneButton btnScene5(47, true);
 
 #ifdef USE_ATEM
-byte mac[] = { 0x90, 0xA2, 0xDB, 0x2A, 0x6A, 0xC4 };
-IPAddress clientIp(192, 168, 10, 45);
-IPAddress atemIp(192, 168, 10, 240);
-EthernetServer server(80);
-ATEMext AtemSwitcher;
-bool isAtemOnline = false;
+  byte mac[] = { 0x90, 0xA2, 0xDB, 0x2A, 0x6A, 0xC4 };
+  IPAddress clientIp(192, 168, 10, 45);
+  IPAddress atemIp(192, 168, 10, 240);
+  EthernetServer server(80);
+  ATEMext AtemSwitcher;
+  bool isAtemOnline = false;
 #endif
 
 #ifdef USE_NRF
-const uint64_t listening_pipes[] = { 0x4A4A4A4AF0LL, 0x4A4A4A4AE1LL };
-RF24 radio(NRF_CE, NRF_CSN);
+  const uint64_t listening_pipes[] = { 0x4A4A4A4AF0LL, 0x4A4A4A4AE1LL };
+  RF24 radio(NRF_CE, NRF_CSN);
 #endif
 
 #ifdef USE_DMX
-volatile uint32_t dmxMillis;
-volatile uint8_t  dmxRxField[3];      //array of DMX vals (raw)
-volatile uint16_t dmxAddress;         //start address
-enum {IDLE, BREAK, STARTB, STARTADR}; //DMX states
-volatile uint8_t dmxState;
+  volatile uint32_t dmxMillis;
+  volatile uint8_t  dmxRxField[3];      //array of DMX vals (raw)
+  volatile uint16_t dmxAddress;         //start address
+  enum {IDLE, BREAK, STARTB, STARTADR}; //DMX states
+  volatile uint8_t dmxState;
 #endif
 
 Adafruit_NeoPixel pixels1 = Adafruit_NeoPixel(PIXELS, WSLED_BOX1, NEO_GRB + NEO_KHZ800);
@@ -121,7 +106,6 @@ void setup() {
   printf_begin();
   Serial.println("\n\ncontroller box");
 
-
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_TALLY1, OUTPUT); pinMode(LED_TALLY2, OUTPUT); pinMode(LED_TALLY3, OUTPUT);
@@ -129,12 +113,12 @@ void setup() {
 
   pinMode(PWM_RING1, OUTPUT); pinMode(PWM_RING2, OUTPUT); pinMode(PWM_RING3, OUTPUT);
 
-  pinMode(BOX_BTN_A1, INPUT_PULLUP);  pinMode(BOX_BTN_A2, INPUT_PULLUP);
-  pinMode(BOX_BTN_A3, INPUT_PULLUP);  pinMode(BOX_BTN_B1, INPUT_PULLUP);
-  pinMode(BOX_BTN_B2, INPUT_PULLUP);  pinMode(BOX_BTN_B3, INPUT_PULLUP);
-  pinMode(SCENE_BTN_1, INPUT_PULLUP); pinMode(SCENE_BTN_2, INPUT_PULLUP);
-  pinMode(SCENE_BTN_3, INPUT_PULLUP); pinMode(SCENE_BTN_4, INPUT_PULLUP);
-  pinMode(SCENE_BTN_5, INPUT_PULLUP);
+  btnA1.attachClick(btnA1Click); btnA2.attachClick(btnA2Click); btnA2.attachClick(btnA3Click);
+  btnB1.attachClick(btnB1Click); btnB2.attachClick(btnB2Click); btnB2.attachClick(btnB3Click);
+
+  btnScene1.attachClick(btnScene1Click); btnScene2.attachClick(btnScene2Click);
+  btnScene3.attachClick(btnScene3Click); 
+  //btnScene4.attachClick(btnScene4Click); btnScene5.attachClick(btnScene5Click);
 
   pinMode(DIPSW_1, INPUT_PULLUP); pinMode(DIPSW_2, INPUT_PULLUP); pinMode(DIPSW_3, INPUT_PULLUP);
   pinMode(DIPSW_4, INPUT_PULLUP); pinMode(DIPSW_5, INPUT_PULLUP); pinMode(DIPSW_6, INPUT_PULLUP);
@@ -150,7 +134,6 @@ void setup() {
   redButton.attachClick(redBtnClick); redButton.attachLongPressStart(redBtnLong); redButton.setPressTicks(2000);
 
   digitalWrite(LED_RED, HIGH);
-
 
 #ifdef USE_ATEM
   Serial.println("atem begin...");
@@ -193,6 +176,8 @@ void redBtnClick() {
 #ifdef USE_ATEM
   if (isAtemOnline) {
     Serial.println("setting ATEM test mode");
+    AtemSwitcher.setProgramInputVideoSource(1, 1000);
+    AtemSwitcher.setProgramInputVideoSource(0, 1000);
   }
 #endif
 
@@ -340,59 +325,45 @@ void setAllPixels(Adafruit_NeoPixel *strip, byte red, byte green, byte blue) {
   strip->show();
 }
 
-void buttonsLocalAndRemote() {
+void btnA1Click() { setInput(1); }
+void btnA2Click() { setInput(2); }
+void btnA3Click() { setInput(3); }
+void btnB1Click() { setKeyer(1); }
+void btnB2Click() { setKeyer(2); }
+void btnB3Click() { setKeyer(3); }
+void btnScene1Click() { setSuperSource(0); }
+void btnScene2Click() { setSuperSource(1); }
+void btnScene3Click() { setSuperSource(2); }
+
+void buttonsRemote() {
   static uint16_t lastButton = 0;
   buttons = 0;
 
-  buttons |= digitalRead(BOX_BTN_A1) == HIGH ? 0 : 0x0001;
+  /*buttons |= digitalRead(BOX_BTN_A1) == HIGH ? 0 : 0x0001;
   buttons |= digitalRead(BOX_BTN_A2) == HIGH ? 0 : 0x0002;
-  buttons |= digitalRead(BOX_BTN_A3) == HIGH ? 0 : 0x0004;
-
+  buttons |= digitalRead(BOX_BTN_A3) == HIGH ? 0 : 0x0004; */
   buttons |= (nrfButtons[0] & 0x03) << 3;
   buttons |= (nrfButtons[1] & 0x03) << 5;
 
-  buttons |= digitalRead(BOX_BTN_B1) == HIGH ? 0 : 0x0080;
+  /*buttons |= digitalRead(BOX_BTN_B1) == HIGH ? 0 : 0x0080;
   buttons |= digitalRead(BOX_BTN_B2) == HIGH ? 0 : 0x0100;
-  buttons |= digitalRead(BOX_BTN_B3) == HIGH ? 0 : 0x0200;
+  buttons |= digitalRead(BOX_BTN_B3) == HIGH ? 0 : 0x0200;*/
 
-  buttons |= digitalRead(SCENE_BTN_1) == HIGH ? 0 : 0x0400;
+  /*buttons |= digitalRead(SCENE_BTN_1) == HIGH ? 0 : 0x0400;
   buttons |= digitalRead(SCENE_BTN_2) == HIGH ? 0 : 0x0800;
   buttons |= digitalRead(SCENE_BTN_3) == HIGH ? 0 : 0x1000;
   buttons |= digitalRead(SCENE_BTN_4) == HIGH ? 0 : 0x2000;
-  buttons |= digitalRead(SCENE_BTN_5) == HIGH ? 0 : 0x4000;
-  
+  buttons |= digitalRead(SCENE_BTN_5) == HIGH ? 0 : 0x4000;*/
 
   if (buttons != lastButton) {
-    
     printf("button: %d\n", buttons);
 
 #ifdef USE_ATEM
-    if (buttons & 0x0001) {
-      setInput(1);
-    } else if (buttons & 0x0002) {
-      setInput(2);
-    } else if (buttons & 0x0004) {
-      setInput(3);
-    } else if (buttons & 0x0008) {
+    if (buttons & 0x0008) {
       setInput(4);
     } else if (buttons & 0x0020) {
       setInput(5);
-    } else if (buttons & 0x0080) {
-      setKeyer(1);
-    } else if (buttons & 0x0100) {
-      setKeyer(2);
-    } else if (buttons & 0x0200) {
-      setKeyer(3);
-    } else if (buttons & 0x0400) {
-      setSuperSource(0);
-    } else if (buttons & 0x0800) {
-      setSuperSource(1);
-    } else if (buttons & 0x1000) {
-      setSuperSource(2);
-    } else if (buttons & 0x2000) {
-      setSuperSource(3);
-    }
-    
+    } 
 #endif
 
     lastButton = buttons;
@@ -403,6 +374,12 @@ void buttonsLocalAndRemote() {
 void loop() {
 
   redButton.tick();
+  btnA1.tick(); btnA2.tick(); btnA3.tick();
+  btnB1.tick(); btnB2.tick(); btnB3.tick();
+  btnScene1.tick(); btnScene2.tick(); 
+  btnScene3.tick(); btnScene4.tick();
+  btnScene5.tick();
+  
 #ifdef USE_ATEM
   wdt_reset();
   loopAtem();
@@ -424,7 +401,7 @@ void loop() {
   }
 #endif
 
-  buttonsLocalAndRemote();
+  buttonsRemote();
   //loopHttp();
   wdt_reset();
 
