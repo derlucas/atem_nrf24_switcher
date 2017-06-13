@@ -67,6 +67,7 @@ uint32_t ledBlinkMillis;
 uint16_t buttons = 0;
 uint8_t lastKeyerInput = -1;
 bool enabledTestMode = false;
+bool ledBlackout = false;
 
 OneButton redButton(43, true);
 OneButton btnA1(25, true); OneButton btnA2(26, true); OneButton btnA3(27, true);
@@ -118,12 +119,12 @@ void setup() {
   btnA1.attachClick(btnA1Click); btnA2.attachClick(btnA2Click); btnA3.attachClick(btnA3Click);
   btnB1.attachClick(btnB1Click); btnB2.attachClick(btnB2Click); btnB3.attachClick(btnB3Click);
 
-  btnA1.setClickTicks(100); btnA2.setClickTicks(100); btnA3.setClickTicks(100);
-  btnB1.setClickTicks(100); btnB2.setClickTicks(100); btnB3.setClickTicks(100);
+  btnA1.setClickTicks(50); btnA2.setClickTicks(50); btnA3.setClickTicks(50);
+  btnB1.setClickTicks(50); btnB2.setClickTicks(50); btnB3.setClickTicks(50);
 
   btnScene1.attachClick(btnScene1Click); btnScene2.attachClick(btnScene2Click);
-  btnScene3.attachClick(btnScene3Click); 
-  //btnScene4.attachClick(btnScene4Click); btnScene5.attachClick(btnScene5Click);
+  btnScene3.attachClick(btnScene3Click); btnScene4.attachClick(btnScene4Click);
+  btnScene5.attachClick(btnScene5Click);
 
   btnScene1.setClickTicks(100); btnScene2.setClickTicks(100); btnScene3.setClickTicks(100);
   btnScene4.setClickTicks(100); btnScene5.setClickTicks(100);
@@ -179,8 +180,11 @@ void setup() {
 
   Serial.println("device ready.\n");
   wdt_enable(WDTO_4S);
-}
 
+  analogWrite(PWM_RING1, 0xff);
+  analogWrite(PWM_RING2, 0xff);
+  analogWrite(PWM_RING3, 0xff);
+}
 
 void ledTest() {
   digitalWrite(LED_RED, HIGH);
@@ -236,19 +240,34 @@ void outputLEDs() {
     return;
   }
 
+  //printf("dmx: %d %d %d\n", dmxRxField[0], dmxRxField[1],dmxRxField[2]);
+
   for(uint8_t i = 0; i<3; i++) {
     if (tally[i] & 0x01 != 0) {
       digitalWrite(tally_pins[i], HIGH);
-  
-      if(lastKeyerInput == i+1) {
-        setAllPixels(&pixels[i], 100, 100, 0);
+
+      if(ledBlackout) {
+        setAllPixels(&pixels[i], 0, 0, 0);
       } else {
-        setAllPixels(&pixels[i], 100, 0, 0);
+        if(lastKeyerInput == i+1) {
+          setAllPixels(&pixels[i], 100, 100, 0);
+        } else {
+          setAllPixels(&pixels[i], 150, 0, 0);
+        }
       }
-    } else if(lastKeyerInput == 1) {
-      setAllPixels(&pixels[i], 20, 100, 0);
+    } else if(lastKeyerInput == i+1) {
+      if(ledBlackout) {
+        setAllPixels(&pixels[i], 0, 0, 0);
+      } else {
+        setAllPixels(&pixels[i], 10, 100, 0);
+      }
     } else {
-      setAllPixels(&pixels[i], 20, 0, 0);
+      if(ledBlackout) {
+        setAllPixels(&pixels[i], 0, 0, 0);
+      } else {
+        setAllPixels(&pixels[i], 7, 0, 0);
+      }
+      
       digitalWrite(tally_pins[i], LOW);
     }
   }
@@ -262,6 +281,7 @@ void outputLEDs() {
       nrfLeds[i] = 0x00;
     }
   }
+
 }
 
 void setAllPixels(Adafruit_NeoPixel *strip, byte red, byte green, byte blue) {
@@ -272,7 +292,6 @@ void setAllPixels(Adafruit_NeoPixel *strip, byte red, byte green, byte blue) {
 }
 
 uint8_t readDMXAddress() {
-
   uint8_t addr = 0;
   addr += digitalRead(DIPSW_1) == LOW ? 0x01 : 0;
   addr += digitalRead(DIPSW_2) == LOW ? 0x02 : 0;
@@ -323,6 +342,8 @@ void btnB3Click() { setKeyer(3); }
 void btnScene1Click() { setSuperSource(0); }
 void btnScene2Click() { setSuperSource(1); }
 void btnScene3Click() { setSuperSource(2); }
+void btnScene4Click() { setSuperSource(3); }
+void btnScene5Click() { setSuperSource(4); }
 
 void buttonsRemote() {
   static uint16_t lastButton = 0;
@@ -335,11 +356,17 @@ void buttonsRemote() {
 
 #ifdef USE_ATEM
     if (buttons & 0x0008) {
+      // blue button on remote 1
       setInput(4);
     } else if (buttons & 0x0020) {
-      setInput(6);
+      // blue button on remote 2
+      setInput(8);
     } 
 #endif
+    if (buttons & 0x0040) {
+      // red button on remote 2
+      ledBlackout = !ledBlackout;
+    }
 
     lastButton = buttons;
   }
@@ -423,11 +450,10 @@ void loopNRF() {
 #endif
 
 #ifdef USE_ATEM
-
 void setInput(uint16_t program) {
   printf("input: %d\n", program);
   atem.setProgramInputVideoSource(1, program);
-  setSuperSource(0);
+  //setSuperSource(0);
 }
 
 void setKeyer(uint8_t program) {
@@ -449,15 +475,16 @@ void setKeyer(uint8_t program) {
 
 void setupKeyer() {
   atem.setKeyerType(0, 0, 1);
-  atem.setKeyChromaHue(0, 0, 1123);
-  atem.setKeyChromaGain(0, 0, 741);
+  atem.setKeyChromaHue(0, 0, 1228);
+  atem.setKeyChromaGain(0, 0, 1000);
   atem.setKeyChromaYSuppress(0, 0, 1000);
   atem.setKeyChromaLift(0, 0, 0);
   atem.setKeyChromaNarrow(0, 0, false);
+  atem.setKeyChromaNarrow(0, 0, true);
 }
 
 void setupSuperSource() {
-  atem.setSuperSourceFillSource(0);
+  atem.setSuperSourceFillSource(8);
   atem.setSuperSourcePreMultiplied(false);
   atem.setSuperSourceBorderEnabled(false);
   atem.setSuperSourceBoxParametersEnabled(0, true);
@@ -474,18 +501,28 @@ void setupSuperSource() {
   atem.setSuperSourceBoxParametersSize(0, 1000);
   
   atem.setSuperSourceBoxParametersPositionX(1, 1100);
-  atem.setSuperSourceBoxParametersPositionY(1, 00);
-  atem.setSuperSourceBoxParametersSize(1, 300);
+  atem.setSuperSourceBoxParametersPositionY(1, 0);
+  atem.setSuperSourceBoxParametersSize(1, 500);
   
   atem.setSuperSourceBoxParametersPositionX(2, 0);
   atem.setSuperSourceBoxParametersPositionY(2, 0);
-  atem.setSuperSourceBoxParametersSize(2, 300);
+  atem.setSuperSourceBoxParametersSize(2, 500);
   
   atem.setSuperSourceBoxParametersPositionX(3, -1100);
-  atem.setSuperSourceBoxParametersPositionY(4, 0);
-  atem.setSuperSourceBoxParametersSize(3, 300);
+  atem.setSuperSourceBoxParametersPositionY(3, 0);
+  atem.setSuperSourceBoxParametersSize(3, 500);
   
   atem.setSuperSourceBoxParametersCropped(0, false);
+
+
+  for(uint8_t i = 1; i < 4; i++) {
+    atem.setSuperSourceBoxParametersCropped(i, true);
+    atem.setSuperSourceBoxParametersCropTop(i, 3900);
+    atem.setSuperSourceBoxParametersCropBottom(i, 2500);
+    atem.setSuperSourceBoxParametersCropLeft(i, 7700);
+    atem.setSuperSourceBoxParametersCropRight(i, 6700);
+  }
+  
 }
 
 void setSuperSource(uint8_t mode) {
@@ -498,24 +535,50 @@ void setSuperSource(uint8_t mode) {
       atem.setSuperSourceBoxParametersEnabled(1, false);
       atem.setSuperSourceBoxParametersEnabled(2, false);
       atem.setSuperSourceBoxParametersEnabled(3, false);
+      atem.setSuperSourceBoxParametersCropped(0, true);
+      atem.setSuperSourceBoxParametersCropTop(0, 3900);
+      atem.setSuperSourceBoxParametersCropBottom(0, 2500);
+      atem.setSuperSourceBoxParametersCropLeft(0, 0);
+      atem.setSuperSourceBoxParametersCropRight(0, 0);
       break;
     case 1:
-      atem.setSuperSourceBoxParametersEnabled(0, false);
-      atem.setSuperSourceBoxParametersInputSource(1, 4);
-      atem.setSuperSourceBoxParametersInputSource(2, 1);
-      atem.setSuperSourceBoxParametersInputSource(3, 6);
-      atem.setSuperSourceBoxParametersEnabled(1, true);
-      atem.setSuperSourceBoxParametersEnabled(2, true);
-      atem.setSuperSourceBoxParametersEnabled(3, true);
+      atem.setSuperSourceBoxParametersEnabled(0, true);
+      atem.setSuperSourceBoxParametersEnabled(1, false);
+      atem.setSuperSourceBoxParametersEnabled(2, false);
+      atem.setSuperSourceBoxParametersEnabled(3, false);
+      atem.setSuperSourceBoxParametersCropped(0, true);
+      atem.setSuperSourceBoxParametersCropTop(0, 3900);
+      atem.setSuperSourceBoxParametersCropBottom(0, 2800);
+      atem.setSuperSourceBoxParametersCropLeft(0, 7590);
+      atem.setSuperSourceBoxParametersCropRight(0, 7400);
       break;
     case 2:
       atem.setSuperSourceBoxParametersEnabled(0, false);
-      atem.setSuperSourceBoxParametersInputSource(1, 1);
-      atem.setSuperSourceBoxParametersInputSource(2, 4);
-      atem.setSuperSourceBoxParametersInputSource(3, 6);
+      //atem.setSuperSourceBoxParametersInputSource(1, 4);
+      atem.setSuperSourceBoxParametersInputSource(2, 6);
+      atem.setSuperSourceBoxParametersInputSource(3, 4);
+      atem.setSuperSourceBoxParametersEnabled(1, false);
+      atem.setSuperSourceBoxParametersEnabled(2, true);
+      atem.setSuperSourceBoxParametersEnabled(3, true);
+      break;
+    case 3:
+      atem.setSuperSourceBoxParametersEnabled(0, false);
+      atem.setSuperSourceBoxParametersInputSource(1, 6);
+      atem.setSuperSourceBoxParametersInputSource(2, 1);
+      atem.setSuperSourceBoxParametersInputSource(3, 4);
       atem.setSuperSourceBoxParametersEnabled(1, true);
       atem.setSuperSourceBoxParametersEnabled(2, true);
       atem.setSuperSourceBoxParametersEnabled(3, true);
+      break;
+    case 4:
+      atem.setSuperSourceBoxParametersEnabled(0, true);
+      atem.setSuperSourceBoxParametersEnabled(1, false);
+      atem.setSuperSourceBoxParametersEnabled(2, false);
+      atem.setSuperSourceBoxParametersEnabled(3, false);
+      atem.setSuperSourceBoxParametersCropTop(0, 0);
+      atem.setSuperSourceBoxParametersCropBottom(0, 2500);
+      atem.setSuperSourceBoxParametersCropLeft(0, 0);
+      atem.setSuperSourceBoxParametersCropRight(0, 0);
       break;
   }
   
@@ -565,6 +628,10 @@ void loopAtem() {
     }
   }
 }
+#else
+void setInput(uint16_t program) {}
+void setKeyer(uint8_t keyer) { }
+void setSuperSource(uint8_t mode) {}
 #endif
 
 #ifdef USE_DMX
@@ -573,26 +640,28 @@ ISR(USART1_RX_vect) {
   uint8_t  USARTstate = UCSR1A;    //get state before data!
   uint8_t  dmxByte    = UDR1;      //get data
   uint8_t  dmxStateL  = dmxState;  //just load once from SRAM to increase speed
+static byte led = LOW;
+if(led == LOW) led = HIGH;
 
+  digitalWrite(LED_RED, led);
+  
   if (USARTstate & (1 << FE1)) {  //check for break
     dmxCount = dmxAddress;        //reset channel counter (count channels before start address)
     dmxState = BREAK;
   } else if (dmxStateL == BREAK) {
-
+    
     if (dmxByte == 0) {
       dmxState = STARTB;          //normal start code detected
     } else {
       dmxState = IDLE;
     }
   } else if (dmxStateL == STARTB) {
-
     if (--dmxCount == 0) {        //start address reached?
       dmxCount = 1;               //set up counter for required channels
       dmxRxField[0] = dmxByte;    //get 1st DMX channel of device
       dmxState = STARTADR;
     }
   } else if (dmxStateL == STARTADR) {
-
     dmxRxField[dmxCount++] = dmxByte;       //get channel
 
     if (dmxCount >= sizeof(dmxRxField)) {   //all ch received?
